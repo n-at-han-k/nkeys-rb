@@ -34,6 +34,12 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "rb_sys", "~> 0.9"
 
+  # DEVELOPMENT ONLY. test/nats/jwt.rb builds a real NATS JWT to prove the
+  # primitives work, and needs base64 for it -- which stopped being a DEFAULT
+  # gem in Ruby 3.4 and is merely bundled, so `require "base64"` raises
+  # LoadError under bundler unless it is declared. The gem itself does not use
+  # it: lib/ is bindings, and bindings do not encode anything.
+  spec.add_development_dependency "base64", "~> 0.2"
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rake-compiler", "~> 1.2"
   # The suite: scampi runs the `__END__` specs co-located with the code they

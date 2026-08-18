@@ -21,7 +21,7 @@
 //! because that is how NATS moves keys around: in config files, in credentials
 //! files and in JWT claims.
 
-use magnus::{function, method, prelude::*, Error, Ruby};
+use magnus::{function, method, prelude::*, Error, RString, Ruby};
 
 use nkeys::{KeyPair, KeyPairType, XKey as NKeysXKey};
 
@@ -36,6 +36,28 @@ fn rt_err<E: std::fmt::Display>(e: E) -> Error {
 fn arg_err<S: Into<String>>(message: S) -> Error {
     let ruby = Ruby::get().expect("arg_err called outside the Ruby VM");
     Error::new(ruby.exception_arg_error(), message.into())
+}
+
+/// Ruby bytes in.
+///
+/// TAKE `RString`, NOT `Vec<u8>`: magnus maps `Vec<u8>` to a Ruby ARRAY of
+/// integers, so a `Vec<u8>` parameter rejects the Ruby String every caller
+/// actually passes with "no implicit conversion of String into Array".
+///
+/// Copied out immediately. `as_slice` is unsafe because the borrow does not
+/// stop Ruby moving or collecting the string underneath it; taking a `Vec` here
+/// means nothing downstream holds a reference into the Ruby heap.
+fn bytes_in(string: RString) -> Vec<u8> {
+    unsafe { string.as_slice() }.to_vec()
+}
+
+/// Ruby bytes out, as a String rather than an Array -- for the same reason.
+/// These are keys, signatures and ciphertext: binary, and what callers want to
+/// base64 or hand back to NATS.
+fn bytes_out(bytes: &[u8]) -> RString {
+    let ruby = Ruby::get().expect("bytes_out called outside the Ruby VM");
+
+    ruby.str_from_slice(bytes)
 }
 
 /// Map a role name to its prefix byte. Accepts the same spellings NATS uses in
@@ -91,19 +113,22 @@ impl RKeyPair {
         self.0.seed().map_err(rt_err)
     }
 
-    /// Raw Ed25519 signature bytes over `input`.
+    /// Raw Ed25519 signature over `input`, as a binary String.
     ///
     /// Deliberately NOT base64: callers need different encodings of the same
     /// signature (a JWT wants base64url without padding, a CONNECT nonce wants
     /// standard base64), so the encoding is theirs to choose.
-    fn sign(&self, input: String) -> Result<Vec<u8>, Error> {
-        self.0.sign(input.as_bytes()).map_err(rt_err)
+    fn sign(&self, input: RString) -> Result<RString, Error> {
+        self.0
+            .sign(&bytes_in(input))
+            .map(|signature| bytes_out(&signature))
+            .map_err(rt_err)
     }
 
     /// Whether `sig` is a valid signature over `input`. A bad signature is
     /// `false` rather than an exception -- it is an expected answer, not a fault.
-    fn verify(&self, input: String, sig: Vec<u8>) -> bool {
-        self.0.verify(input.as_bytes(), &sig).is_ok()
+    fn verify(&self, input: RString, sig: RString) -> bool {
+        self.0.verify(&bytes_in(input), &bytes_in(sig)).is_ok()
     }
 }
 
@@ -144,17 +169,23 @@ impl RXKey {
     /// public key as a STRING, because that is the form NATS moves keys in --
     /// out of a config file, or off the `xkey` field of an auth callout
     /// request. Parsing it here keeps that conversion out of every caller.
-    fn seal(&self, input: Vec<u8>, recipient: String) -> Result<Vec<u8>, Error> {
+    fn seal(&self, input: RString, recipient: String) -> Result<RString, Error> {
         let recipient = NKeysXKey::from_public_key(&recipient).map_err(rt_err)?;
 
-        self.0.seal(&input, &recipient).map_err(rt_err)
+        self.0
+            .seal(&bytes_in(input), &recipient)
+            .map(|sealed| bytes_out(&sealed))
+            .map_err(rt_err)
     }
 
     /// Decrypt `input` from `sender` (an `X...` public key).
-    fn open(&self, input: Vec<u8>, sender: String) -> Result<Vec<u8>, Error> {
+    fn open(&self, input: RString, sender: String) -> Result<RString, Error> {
         let sender = NKeysXKey::from_public_key(&sender).map_err(rt_err)?;
 
-        self.0.open(&input, &sender).map_err(rt_err)
+        self.0
+            .open(&bytes_in(input), &sender)
+            .map(|opened| bytes_out(&opened))
+            .map_err(rt_err)
     }
 }
 
