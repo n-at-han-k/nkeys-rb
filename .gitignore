@@ -1,0 +1,24 @@
+# Gems
+/.gem/
+*.gem
+/pkg/
+
+# Nix
+/.direnv/
+result
+
+# Rust / native extension build artifacts (compiled at install time)
+*.so
+*.bundle
+/tmp/
+# The workspace build dir lives at the repo root (see /Cargo.toml).
+/target/
+/ext/**/target/
+# The resolved lockfile is committed at the workspace root (/Cargo.lock) for
+# reproducible cross-compiled gems; only stray per-crate locks are ignored.
+ext/**/Cargo.lock
+
+# Editor
+*.swp
+*.swo
+*~

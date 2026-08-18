@@ -1,0 +1,27 @@
+# The crate is `nkeys_rb`, not `nkeys`, so it can depend on the crates.io
+# `nkeys` it wraps without the two names colliding.
+[package]
+name = "nkeys_rb"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "nkeys_rb"
+crate-type = ["cdylib"]
+
+[dependencies]
+# magnus 0.8 is required for Ruby 4.0 C-API compatibility (0.7 fails to compile
+# against Ruby 4.0: rb_fiber_raise pointer mutability + RTypedData.typed_flag).
+magnus = "0.8"
+
+# The library this gem exists to expose: the NATS key format (base32 + CRC-16
+# seed/public encoding, one prefix byte per role), Ed25519 signing, and x25519
+# XKey sealing.
+#
+# `xkeys` IS NOT A DEFAULT FEATURE. Without it the crate has no XKey type at
+# all, and half the reason this gem exists (sealing an auth callout request)
+# does not compile.
+[dependencies.nkeys]
+version = "0.4"
+features = ["xkeys"]
