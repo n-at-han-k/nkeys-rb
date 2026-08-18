@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     "Ed25519 keypairs across every key role, and the x25519 XKey sealing used by " \
     "NATS auth callout. Named nkeys-rb because the plain `nkeys` gem name is taken " \
     "by an unrelated pure-Ruby implementation."
-  spec.homepage = "https://git.kremlin.email/n-at-han-k/nkeys-rb"
+  spec.homepage = "https://github.com/n-at-han-k/nkeys-rb"
 
   spec.required_ruby_version = ">= 3.3"
 
