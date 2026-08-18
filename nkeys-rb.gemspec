@@ -36,4 +36,9 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rake-compiler", "~> 1.2"
+  # The suite: scampi runs the `__END__` specs co-located with the code they
+  # cover, so there is no separate test/ tree. It shells out to ripgrep to find
+  # them, which is not a gem -- see .github/workflows/test.yaml.
+  spec.add_development_dependency "scampi", "~> 1.0"
+  spec.add_development_dependency "lefthook", "~> 2.1"
 end

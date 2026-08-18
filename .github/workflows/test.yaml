@@ -2,37 +2,43 @@ name: Test
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    name: Ruby ${{ matrix.ruby }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.3", "3.4"]
+        ruby-version: ["3.3", "3.4"]
+    name: Ruby ${{ matrix.ruby-version }}
     steps:
       - uses: actions/checkout@v4
 
-      # Compiles the extension from source, which is what a `gem install` on a
-      # platform with no precompiled gem would do.
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
-
+      # Ruby AND Rust: the suite cannot run without the compiled extension, so a
+      # ruby-only setup leaves the whole run dead on arrival. Same oxidize-rb
+      # toolchain family the cross-compile workflow uses; it caches cargo by
+      # default, which keeps the nkeys build off the critical path.
       - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
         with:
-          ruby-version: ${{ matrix.ruby }}
+          ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
-          cargo-cache: true
 
+      # scampi discovers co-located `__END__` specs with ripgrep.
+      - run: sudo apt-get install -y ripgrep
+
+      # Build the native extension into lib/ BEFORE the suite runs. Without this
+      # nkeys.rb's `require_relative "nkeys/nkeys_rb"` raises LoadError at load
+      # time and takes down the entire run rather than just one spec.
       - run: bundle exec rake compile
 
-      - run: bundle exec rake test
+      - run: bundle exec scampi

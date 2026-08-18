@@ -23,6 +23,11 @@
             libyaml
             openssl
 
+            # lefthook's pre-commit secret scan, and ripgrep because scampi
+            # discovers the co-located `__END__` specs with it.
+            trufflehog
+            ripgrep
+
             # The ext/nats_callout binding (magnus + rb_sys).
             rustc
             cargo

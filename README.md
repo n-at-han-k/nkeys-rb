@@ -61,35 +61,42 @@ libclang that `rb_sys`' bindgen needs:
 direnv allow          # or: nix develop
 bundle install
 bundle exec rake compile
-bundle exec rake test
+bin/test
 ```
 
 ## Releasing
 
-Consumers must never need Rust. That is the whole point of the release process:
-`bundle install` should find a gem for its platform with the `.so` already
-inside, rather than a source gem that shells out to `cargo`.
+Consumers must never need Rust. That is the whole point: `bundle install` should
+find a gem for its platform with the `.so` already inside, rather than a source
+gem that shells out to `cargo`.
 
-1. Bump `NKeys::VERSION` in `lib/nkeys/version.rb`, commit, tag and push:
+A release is TWO kinds of gem for the same version — the source gem (the
+fallback for any platform not precompiled) and one precompiled gem per platform.
+CI builds the second kind; `bin/release-gem` builds the first and pushes both.
 
-   ```bash
-   git tag v0.1.0 && git push origin main --tags
-   ```
+```bash
+bin/increment-version patch     # or minor / major — rewrites lib/nkeys/version.rb
+git commit -am "Bump to $(ruby -Ilib -rnkeys/version -e 'print NKeys::VERSION')"
+git push origin main            # cross-compile.yml builds the platform gems
+# ...wait for that run to go green...
+bin/release-gem                 # downloads them, builds the source gem, pushes all
+```
 
-2. Run the **Release** workflow (`.github/workflows/release.yml`) with that tag.
-   It cross-compiles one gem per platform via `oxidize-rb/actions/cross-gem`,
-   builds the source gem, and pushes them all to RubyGems.org.
+`bin/release-gem` refuses to run if the local version is not ahead of what is
+already on RubyGems, and if the latest green CI run built a different version it
+says so rather than publishing a mismatched set. It tolerates gems that are
+already published, so a release that dies partway through can simply be re-run.
 
-Publishing uses RubyGems **trusted publishing** (OIDC) rather than an API key,
-so there is no long-lived credential in repository secrets. Configure the
-trusted publisher once, on the gem's RubyGems.org settings page, before the
-first release — pointing it at this repository and the `release.yml` workflow.
+It needs the [GitHub CLI](https://cli.github.com) to fetch the CI artifacts.
 
-The `ruby` platform in the matrix is the **source** gem. It is the fallback for
-any platform not cross-compiled, and the only build that needs cargo on the
-installing machine, so it is published alongside the others rather than instead
-of them.
+## Testing
 
-`.github/workflows/cross-compile.yml` builds the same matrix on every push to
-`main` without publishing, so a break in the cross toolchain surfaces before a
-release rather than during one.
+Specs are co-located with the code they cover, in `__END__` blocks, and run with
+[scampi](https://github.com/general-intelligence-systems/scampi):
+
+```bash
+bin/test
+```
+
+`bundle exec lefthook install` wires that plus a trufflehog secret scan into a
+pre-commit hook.
