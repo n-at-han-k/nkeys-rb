@@ -64,6 +64,23 @@ bundle exec rake compile
 bin/test
 ```
 
+## Versioning
+
+The gem version is `<nkeys crate version>.<our release>`:
+
+```
+nkeys-rb 0.4.5.0
+         └─┬─┘ └ our release against that crate
+           └ the Rust nkeys crate this wraps
+```
+
+So `nkeys-rb 0.4.5.2` is the third build of this gem against `nkeys 0.4.5`. The
+crate is pinned exactly in `ext/nkeys/Cargo.toml` (`version = "=0.4.5"`) so the
+claim cannot quietly become false — `bin/increment-version` moves both together.
+
+Depend on it pessimistically to the fourth segment (`~> 0.4.5.0`) and you track
+our fixes without silently moving to a new crate.
+
 ## Releasing
 
 Consumers must never need Rust. That is the whole point: `bundle install` should
@@ -75,7 +92,9 @@ fallback for any platform not precompiled) and one precompiled gem per platform.
 CI builds the second kind; `bin/release-gem` builds the first and pushes both.
 
 ```bash
-bin/increment-version patch     # or minor / major — rewrites lib/nkeys/version.rb
+bin/increment-version           # bump our segment: 0.4.5.0 -> 0.4.5.1
+# ...or, to track a new crate release (also repins ext/nkeys/Cargo.toml):
+# bin/increment-version 0.4.6   # -> 0.4.6.0
 git commit -am "Bump to $(ruby -Ilib -rnkeys/version -e 'print NKeys::VERSION')"
 git push origin main            # cross-compile.yml builds the platform gems
 # ...wait for that run to go green...

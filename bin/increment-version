@@ -4,32 +4,46 @@
 require "erb"
 require_relative "../lib/nkeys/version"
 
-USAGE = "Usage: bin/increment-version <major|minor|patch>"
+USAGE = <<~TEXT
+  Usage:
+    bin/increment-version                  bump OUR segment (the 4th)
+    bin/increment-version <crate-version>  track a new nkeys release, e.g. 0.4.6
 
-segment = ARGV[0]
-unless %w[major minor patch].include?(segment)
+  The gem version is <nkeys crate version>.<our release>. The first three
+  segments are not ours to choose -- they say which version of the Rust crate
+  this gem wraps -- so bumping them means moving to a new crate, which also
+  rewrites the dependency in ext/nkeys/Cargo.toml and resets our segment to 0.
+TEXT
+
+CARGO_TOML = File.expand_path("../ext/nkeys/Cargo.toml", __dir__)
+
+current = NKeys::VERSION
+crate, ours = current.split(".").then { |parts| [parts[0, 3].join("."), parts[3].to_i] }
+
+case ARGV[0]
+when nil
+  version = "#{crate}.#{ours + 1}"
+when /\A\d+\.\d+\.\d+\z/
+  crate = ARGV[0]
+  version = "#{crate}.0"
+
+  # Keep the claim honest: the version says which crate this wraps, so moving it
+  # has to move the dependency too, or the two drift and the version lies.
+  cargo = File.read(CARGO_TOML)
+  updated = cargo.sub(/^version = "=\d+\.\d+\.\d+"$/, %(version = "=#{crate}"))
+  abort "ERROR: could not find a pinned nkeys version in #{CARGO_TOML}" if updated == cargo
+
+  File.write(CARGO_TOML, updated)
+  puts "ext/nkeys/Cargo.toml: nkeys pinned to =#{crate}"
+else
   warn USAGE
   exit 1
 end
 
-current = NKeys::VERSION
-major, minor, patch = current.split(".").map(&:to_i)
-
-case segment
-when "major" then major += 1; minor = 0; patch = 0
-when "minor" then minor += 1; patch = 0
-when "patch" then patch += 1
-end
-
-version = "#{major}.#{minor}.#{patch}"
-
 template_path = File.expand_path("../lib/nkeys/version.rb.erb", __dir__)
 output_path   = File.expand_path("../lib/nkeys/version.rb", __dir__)
 
-template = ERB.new(File.read(template_path))
-result = template.result(binding)
-
-File.write(output_path, result)
+File.write(output_path, ERB.new(File.read(template_path)).result(binding))
 
 `bundle install`
 

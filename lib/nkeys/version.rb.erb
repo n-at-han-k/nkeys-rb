@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
 module NKeys
+  # <nkeys crate version>.<our release>. The first three segments say which
+  # version of the Rust crate this gem wraps; the fourth is ours, bumped for
+  # changes on the Ruby side against that same crate. Managed by
+  # bin/increment-version -- edit that, not this.
   VERSION = "<%= version %>"
 end
