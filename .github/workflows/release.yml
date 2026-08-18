@@ -1,0 +1,118 @@
+name: Release
+
+# Cross-compiles a precompiled gem for every supported platform and pushes the
+# lot to RubyGems.org.
+#
+# WHY PRECOMPILED GEMS AND NOT A GIT DEPENDENCY. Bundler compiles a git-sourced
+# native extension at `bundle install`, which would put a Rust toolchain (and
+# libclang, and a cargo fetch) inside every consumer's Docker build. Publishing
+# per-platform gems moves that cost here, once: RubyGems then serves the gem
+# matching the installing platform with the .so already inside, and `bundle
+# install` needs no Rust at all.
+#
+# The `ruby` platform in the matrix is the SOURCE gem. It is the fallback for
+# any platform not built below, and the only one that does need cargo on the
+# installing machine -- so it must be published alongside the rest, not instead
+# of them.
+#
+# Trusted publishing (OIDC) rather than a RUBYGEMS_API_KEY secret: there is no
+# long-lived credential to leak or rotate. Configure the trusted publisher on
+# the gem's RubyGems.org settings page before the first run.
+
+concurrency:
+  group: "release-${{ inputs.version_tag }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: "Version tag to release (e.g. v0.1.0). Must already be pushed."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: "build (${{ matrix.platform }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        platform:
+          # The source gem. Keep first: if this one cannot build, none of the
+          # cross builds are meaningful either.
+          - "ruby"
+          # glibc Linux -- what the kremlin app runs on (ruby:3.4-slim is
+          # Debian), on both architectures the cluster schedules to.
+          - "x86_64-linux-gnu"
+          - "aarch64-linux-gnu"
+          # musl Linux, for any Alpine-based consumer.
+          - "x86_64-linux-musl"
+          - "aarch64-linux-musl"
+          # Developer machines.
+          - "arm64-darwin"
+          - "x86_64-darwin"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version_tag }}
+          persist-credentials: false
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      # The source gem needs no cross toolchain, just `rake build`.
+      - name: Build source gem
+        if: matrix.platform == 'ruby'
+        run: bundle exec rake build
+
+      # Everything else goes through rb-sys-dock, which builds inside a
+      # container carrying that platform's toolchain.
+      - uses: oxidize-rb/actions/cross-gem@v1
+        if: matrix.platform != 'ruby'
+        id: cross-gem
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: "3.3,3.4"
+
+      - name: Collect cross gem
+        if: matrix.platform != 'ruby'
+        run: |
+          mkdir -p pkg
+          cp "${{ steps.cross-gem.outputs.gem-path }}" pkg/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ inputs.version_tag }}-gem-${{ matrix.platform }}
+          path: pkg/*.gem
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    name: "Push gems to RubyGems.org"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # for OIDC trusted publishing to RubyGems.org
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: gems
+          pattern: release-${{ inputs.version_tag }}-gem-*
+          merge-multiple: true
+
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+
+      - name: Push gems
+        run: |
+          for gem in gems/*.gem; do
+            echo "Pushing $gem ..."
+            # A re-run after a partial failure must not abort on the gems that
+            # already landed -- RubyGems rejects a duplicate version outright.
+            gem push "$gem" || echo "WARNING: failed to push $gem (may already exist)"
+          done

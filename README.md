@@ -64,6 +64,32 @@ bundle exec rake compile
 bundle exec rake test
 ```
 
-Precompiled per-platform gems are cross-compiled in CI
-(`.github/workflows/cross-compile.yml`) via `oxidize-rb/actions/cross-gem`, so
-installing this gem does not require a Rust toolchain.
+## Releasing
+
+Consumers must never need Rust. That is the whole point of the release process:
+`bundle install` should find a gem for its platform with the `.so` already
+inside, rather than a source gem that shells out to `cargo`.
+
+1. Bump `NKeys::VERSION` in `lib/nkeys/version.rb`, commit, tag and push:
+
+   ```bash
+   git tag v0.1.0 && git push origin main --tags
+   ```
+
+2. Run the **Release** workflow (`.github/workflows/release.yml`) with that tag.
+   It cross-compiles one gem per platform via `oxidize-rb/actions/cross-gem`,
+   builds the source gem, and pushes them all to RubyGems.org.
+
+Publishing uses RubyGems **trusted publishing** (OIDC) rather than an API key,
+so there is no long-lived credential in repository secrets. Configure the
+trusted publisher once, on the gem's RubyGems.org settings page, before the
+first release — pointing it at this repository and the `release.yml` workflow.
+
+The `ruby` platform in the matrix is the **source** gem. It is the fallback for
+any platform not cross-compiled, and the only build that needs cargo on the
+installing machine, so it is published alongside the others rather than instead
+of them.
+
+`.github/workflows/cross-compile.yml` builds the same matrix on every push to
+`main` without publishing, so a break in the cross toolchain surfaces before a
+release rather than during one.
